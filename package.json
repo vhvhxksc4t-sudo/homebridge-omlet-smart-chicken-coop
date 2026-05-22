@@ -1,6 +1,6 @@
 {
   "name": "homebridge-omlet-smart-chicken-coop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Homebridge plugin for Omlet Smart Automatic Chicken Coop — supports multiple doors",
   "main": "dist/index.js",
   "scripts": {

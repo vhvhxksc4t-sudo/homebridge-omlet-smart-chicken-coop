@@ -6,12 +6,17 @@ export type DoorStateValue =
   | 'open' | 'closed' | 'opening' | 'closing'
   | 'openpending' | 'closepending' | 'stopping' | 'fault';
 
+export type LightStateValue = 'on' | 'off' | 'onpending' | 'offpending';
+
 export interface OmletDevice {
   deviceId: string;
   name: string;
   deviceType: string;
   state: {
-    door?: { state: DoorStateValue; fault: string; lightLevel: number };
+    door?:         { state: DoorStateValue; fault: string; lightLevel: number };
+    light?:        { state: LightStateValue };
+    general?:      { batteryLevel: number; powerSource: 'external' | 'battery' };
+    connectivity?: { wifiStrength: number; connected: boolean };
   };
   actions: Array<{ actionName: string; url: string }>;
 }

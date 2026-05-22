@@ -11,9 +11,15 @@ import { OmletDoorAccessory } from './accessory';
 const PLUGIN_NAME = 'homebridge-omlet-smart-chicken-coop';
 const PLATFORM_NAME = 'OmletSmartChickenCoop';
 
+export interface DeviceOverride {
+  name: string;
+  hideLight?: boolean;
+}
+
 export interface OmletConfig extends PlatformConfig {
   apiKey: string;
   pollInterval?: number;
+  devices?: DeviceOverride[];
 }
 
 export class OmletCoopDoorPlatform implements DynamicPlatformPlugin {
@@ -40,6 +46,13 @@ export class OmletCoopDoorPlatform implements DynamicPlatformPlugin {
     this.accessories.set(accessory.UUID, accessory);
   }
 
+  private deviceOverride(name: string): DeviceOverride {
+    const match = (this.config.devices ?? []).find(
+      (d) => d.name.toLowerCase() === name.toLowerCase(),
+    );
+    return match ?? { name };
+  }
+
   private async discoverDevices(): Promise<void> {
     const api = new OmletApi(this.config.apiKey);
 
@@ -57,6 +70,12 @@ export class OmletCoopDoorPlatform implements DynamicPlatformPlugin {
 
     if (autodoors.length === 0) {
       this.logger.warn('No Autodoor devices found on this account.');
+      return;
+    }
+
+    this.logger.info('Discovered %d Autodoor device(s):', autodoors.length);
+    for (const d of autodoors) {
+      this.logger.info('  • %s  (id: %s)', d.name, d.deviceId);
     }
 
     const activeUUIDs = new Set<string>();
@@ -64,18 +83,19 @@ export class OmletCoopDoorPlatform implements DynamicPlatformPlugin {
     for (const device of autodoors) {
       const uuid = this.hap.uuid.generate(device.deviceId);
       activeUUIDs.add(uuid);
+      const override = this.deviceOverride(device.name);
 
       const existing = this.accessories.get(uuid);
       if (existing) {
         existing.context.deviceId = device.deviceId;
         this.homebridgeApi.updatePlatformAccessories([existing]);
-        this.logger.info('Restored accessory: %s', device.name);
-        this.handlers.set(uuid, new OmletDoorAccessory(this, existing));
+        this.logger.info('Restored: %s%s', device.name, override.hideLight ? ' (light hidden)' : '');
+        this.handlers.set(uuid, new OmletDoorAccessory(this, existing, override));
       } else {
         const accessory = new this.homebridgeApi.platformAccessory(device.name, uuid);
         accessory.context.deviceId = device.deviceId;
-        this.logger.info('Adding new accessory: %s', device.name);
-        this.handlers.set(uuid, new OmletDoorAccessory(this, accessory));
+        this.logger.info('Adding: %s%s', device.name, override.hideLight ? ' (light hidden)' : '');
+        this.handlers.set(uuid, new OmletDoorAccessory(this, accessory, override));
         this.homebridgeApi.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
         this.accessories.set(uuid, accessory);
       }

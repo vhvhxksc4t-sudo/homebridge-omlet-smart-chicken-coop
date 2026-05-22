@@ -4,7 +4,7 @@ import type {
   CharacteristicValue,
   Logger,
 } from 'homebridge';
-import type { OmletCoopDoorPlatform } from './platform';
+import type { OmletCoopDoorPlatform, DeviceOverride } from './platform';
 import { OmletApi, type DoorStateValue, type LightStateValue } from './omletApi';
 
 const TRANSITION_STATES: DoorStateValue[] = [
@@ -16,7 +16,7 @@ const LOW_BATTERY_THRESHOLD = 20;
 
 export class OmletDoorAccessory {
   private readonly doorService: Service;
-  private readonly lightService: Service;
+  private readonly lightService: Service | null;
   private readonly batteryService: Service;
   private readonly api: OmletApi;
   private readonly log: Logger;
@@ -30,6 +30,7 @@ export class OmletDoorAccessory {
   constructor(
     private readonly platform: OmletCoopDoorPlatform,
     private readonly accessory: PlatformAccessory,
+    private readonly override: DeviceOverride = { name: '' },
   ) {
     const { hap, logger, config } = platform;
     this.log = logger;
@@ -57,14 +58,23 @@ export class OmletDoorAccessory {
       .onSet((value) => this.setLockTargetState(value));
 
     // ── Light (Lightbulb) ────────────────────────────────────────────────────
-    this.lightService =
-      accessory.getService(hap.Service.Lightbulb) ??
-      accessory.addService(hap.Service.Lightbulb, `${accessory.displayName} Light`);
+    if (override.hideLight) {
+      // Remove the service if it was previously registered (e.g. config changed)
+      const existing = accessory.getService(hap.Service.Lightbulb);
+      if (existing) {
+        accessory.removeService(existing);
+      }
+      this.lightService = null;
+    } else {
+      this.lightService =
+        accessory.getService(hap.Service.Lightbulb) ??
+        accessory.addService(hap.Service.Lightbulb, `${accessory.displayName} Light`);
 
-    this.lightService
-      .getCharacteristic(hap.Characteristic.On)
-      .onGet(() => this.currentLightOn)
-      .onSet((value) => this.setLightOn(value));
+      this.lightService
+        .getCharacteristic(hap.Characteristic.On)
+        .onGet(() => this.currentLightOn)
+        .onSet((value) => this.setLightOn(value));
+    }
 
     // ── Battery ──────────────────────────────────────────────────────────────
     this.batteryService =
@@ -186,7 +196,7 @@ export class OmletDoorAccessory {
       }
 
       // Light
-      if (light) {
+      if (light && this.lightService) {
         const newLightOn = (light.state as LightStateValue) === 'on' || light.state === 'onpending';
         if (newLightOn !== this.currentLightOn) {
           this.log.info('[%s] light: %s', this.accessory.displayName, newLightOn ? 'on' : 'off');

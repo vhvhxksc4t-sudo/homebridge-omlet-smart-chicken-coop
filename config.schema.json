@@ -22,7 +22,28 @@
         "type": "integer",
         "default": 60,
         "minimum": 10,
-        "description": "How often to check door state. Automatically drops to 10s during open/close transitions."
+        "description": "How often to check device state. Drops to 10s automatically during door transitions."
+      },
+      "devices": {
+        "title": "Device Settings",
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "title": "Device Name",
+              "type": "string",
+              "required": true,
+              "description": "Must match the name in the Omlet app exactly (check Homebridge log for discovered names)"
+            },
+            "hideLight": {
+              "title": "Hide Light",
+              "type": "boolean",
+              "default": false,
+              "description": "Hide the coop light accessory for this door"
+            }
+          }
+        }
       }
     }
   },
@@ -32,6 +53,16 @@
     {
       "key": "pollInterval",
       "description": "How often to check door state (seconds). Drops to 10s automatically during transitions."
+    },
+    {
+      "key": "devices",
+      "type": "array",
+      "title": "Device Settings",
+      "description": "Optional per-device overrides. Device names are logged at startup — check the Homebridge log.",
+      "items": [
+        "devices[].name",
+        "devices[].hideLight"
+      ]
     }
   ]
 }

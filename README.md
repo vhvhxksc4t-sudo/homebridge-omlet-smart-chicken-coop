@@ -164,7 +164,7 @@ Device names and IDs are logged at every startup:
 ## Development
 
 ```bash
-git clone https://github.com/vhvhxksc4t/homebridge-omlet-smart-chicken-coop.git
+git clone https://github.com/vhvhxksc4t-sudo/homebridge-omlet-smart-chicken-coop.git
 cd homebridge-omlet-smart-chicken-coop
 npm install
 npm run build        # compile TypeScript once

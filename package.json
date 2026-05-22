@@ -26,12 +26,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/vhvhxksc4t/homebridge-omlet-smart-chicken-coop.git"
+    "url": "https://github.com/vhvhxksc4t-sudo/homebridge-omlet-smart-chicken-coop.git"
   },
   "bugs": {
-    "url": "https://github.com/vhvhxksc4t/homebridge-omlet-smart-chicken-coop/issues"
+    "url": "https://github.com/vhvhxksc4t-sudo/homebridge-omlet-smart-chicken-coop/issues"
   },
-  "homepage": "https://github.com/vhvhxksc4t/homebridge-omlet-smart-chicken-coop#readme",
+  "homepage": "https://github.com/vhvhxksc4t-sudo/homebridge-omlet-smart-chicken-coop#readme",
   "engines": {
     "node": ">=22.0.0",
     "homebridge": ">=1.8.0"

@@ -9,9 +9,12 @@ Supports **multiple doors** on a single account (one HomeKit accessory per coop)
 ## Features
 
 - **Lock/Unlock in HomeKit** — closed door = Locked (Secured), open door = Unlocked (Unsecured)
+- **Coop light control** — turn the coop light on or off from the Home app or Siri
+- **Battery level** — battery percentage and low battery alert visible in HomeKit (when running on batteries)
 - **Notifications** — HomeKit notifies you when the door opens or closes (enable in the Home app)
 - **Manual control** — open or close from the Home app, Siri, or any HomeKit automation
 - **Multiple coops** — all Autodoor devices on your account are discovered automatically
+- **Per-device options** — hide the light accessory for doors that don't have one fitted
 - **Responsive polling** — checks every 60 seconds normally; drops to every 10 seconds while the door is in motion
 
 ---
@@ -56,7 +59,7 @@ API keys are free and issued instantly from the Omlet developer portal.
 
 ### Via Homebridge UI
 
-After installing, click **Settings** on the plugin card and fill in your API key. Everything else has sensible defaults.
+After installing, click **Settings** on the plugin card and fill in your API key. Everything else has sensible defaults. Per-device settings are available under **Device Settings**.
 
 ### Manually (config.json)
 
@@ -76,15 +79,42 @@ Add the following to the `platforms` array in your Homebridge `config.json`:
 |---|---|---|---|
 | `apiKey` | string | *required* | Your Omlet API key |
 | `name` | string | `"Omlet Smart Chicken Coop"` | Display name for the platform |
-| `pollInterval` | integer (seconds) | `60` | How often to check door state. Minimum 10. Automatically drops to 10s during open/close transitions. |
+| `pollInterval` | integer (seconds) | `60` | How often to check device state. Minimum 10. Automatically drops to 10s during open/close transitions. |
+| `devices` | array | `[]` | Per-device overrides — see below |
+
+### Per-device settings
+
+Each entry in the `devices` array matches a door by name (as it appears in the Omlet app). Device names are printed to the Homebridge log at startup if you're unsure.
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `name` | string | *required* | Device name — must match the Omlet app exactly |
+| `hideLight` | boolean | `false` | Hide the coop light accessory for this door |
+
+Example with two doors, one without a light fitted:
+
+```json
+{
+  "platform": "OmletSmartChickenCoop",
+  "name": "Omlet Smart Chicken Coop",
+  "apiKey": "your-api-key-here",
+  "pollInterval": 60,
+  "devices": [
+    { "name": "Chicken Coop",     "hideLight": false },
+    { "name": "Duck House",       "hideLight": true  }
+  ]
+}
+```
 
 ---
 
-## HomeKit State Mapping
+## HomeKit Services
 
-The door is exposed as a **Lock Mechanism** accessory.
+Each discovered door exposes three HomeKit services:
 
-| Omlet door state | HomeKit state |
+### Lock Mechanism (door)
+
+| Omlet state | HomeKit state |
 |---|---|
 | `open` | Unlocked (Unsecured) |
 | `closed` | Locked (Secured) |
@@ -92,6 +122,14 @@ The door is exposed as a **Lock Mechanism** accessory.
 | `closing` / `closepending` | Unknown (transitioning) |
 | `stopping` | Unknown |
 | `fault` | Jammed |
+
+### Lightbulb (coop light)
+
+On/off control via the Omlet light actions. Can be hidden per-device with `hideLight: true` for doors without a light fitted.
+
+### Battery
+
+Displays battery percentage and triggers a low battery alert in HomeKit when the level drops to 20% or below. When running on external (mains) power the level will show 100% — this is what the Omlet API reports.
 
 ---
 
@@ -113,6 +151,14 @@ You can also trigger automations — for example, send a notification if the doo
 
 No extra configuration required. The plugin discovers all Autodoor devices on your Omlet account automatically and creates one HomeKit accessory per door. Each accessory polls independently.
 
+Device names and IDs are logged at every startup:
+
+```
+[Omlet Smart Chicken Coop] Discovered 2 Autodoor device(s):
+[Omlet Smart Chicken Coop]   • Chicken Coop  (id: abc123)
+[Omlet Smart Chicken Coop]   • Duck House    (id: def456)
+```
+
 ---
 
 ## Development
@@ -125,13 +171,38 @@ npm run build        # compile TypeScript once
 npm run watch        # recompile on save
 ```
 
-To test against a live Homebridge instance, install the local folder as a global package:
+Since Homebridge typically runs on a separate device (e.g. a Raspberry Pi), the easiest way to test a local build is to pack it and copy it over:
 
 ```bash
-npm install -g /path/to/homebridge-omlet-smart-chicken-coop
+npm run build
+npm pack
+# creates homebridge-omlet-smart-chicken-coop-x.x.x.tgz
+
+scp homebridge-omlet-smart-chicken-coop-*.tgz pi@your-pi-ip:~
+
+# on the Pi:
+npm install -g ~/homebridge-omlet-smart-chicken-coop-*.tgz
 ```
 
-Then add the platform to your Homebridge config and restart.
+### Beta releases
+
+To publish a pre-release for testing without affecting the `@latest` tag:
+
+```bash
+npm version prerelease --preid=beta   # e.g. 0.4.0-beta.0
+npm publish --tag beta
+```
+
+Testers opt in with:
+```bash
+npm install -g homebridge-omlet-smart-chicken-coop@beta
+```
+
+Promote to stable when ready:
+```bash
+npm version 0.4.0
+npm publish
+```
 
 ---
 
@@ -145,6 +216,12 @@ The plugin polls on an interval rather than receiving push events. The default i
 
 **"No Autodoor devices found" warning**
 This means your API key is valid but the account has no Autodoor devices registered. Check that your door is set up in the Omlet app under the same account.
+
+**Light still showing after setting `hideLight: true`**
+Restart Homebridge once after saving the config change. The service is removed from the accessory cache on the first restart and will not reappear.
+
+**Door shows as offline / unavailable**
+The door has lost its connection to the Omlet cloud. The plugin will keep retrying on the normal poll interval and recover automatically when the door comes back online — no Homebridge restart needed.
 
 ---
 

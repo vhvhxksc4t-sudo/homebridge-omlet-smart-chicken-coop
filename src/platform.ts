@@ -5,7 +5,7 @@ import type {
   PlatformAccessory,
   PlatformConfig,
 } from 'homebridge';
-import { createOmlet } from 'smartcoop-sdk';
+import { OmletApi } from './omletApi';
 import { OmletDoorAccessory } from './accessory';
 
 const PLUGIN_NAME = 'homebridge-omlet-smart-chicken-coop';
@@ -41,11 +41,11 @@ export class OmletCoopDoorPlatform implements DynamicPlatformPlugin {
   }
 
   private async discoverDevices(): Promise<void> {
-    const omlet = createOmlet(this.config.apiKey);
+    const api = new OmletApi(this.config.apiKey);
 
-    let deviceHandlers;
+    let devices;
     try {
-      deviceHandlers = await omlet.getDevices();
+      devices = await api.getDevices();
     } catch (err) {
       this.logger.error('Failed to fetch devices from Omlet API: %s', err);
       return;
@@ -53,7 +53,7 @@ export class OmletCoopDoorPlatform implements DynamicPlatformPlugin {
 
     // 'Feeder' devices are intentionally excluded for now — no API support yet.
     // When Omlet adds feeder state/actions to their API, add a FeederAccessory here.
-    const autodoors = deviceHandlers.filter((d) => d.getData().deviceType === 'Autodoor');
+    const autodoors = devices.filter((d) => d.deviceType === 'Autodoor');
 
     if (autodoors.length === 0) {
       this.logger.warn('No Autodoor devices found on this account.');
@@ -61,8 +61,7 @@ export class OmletCoopDoorPlatform implements DynamicPlatformPlugin {
 
     const activeUUIDs = new Set<string>();
 
-    for (const deviceHandler of autodoors) {
-      const device = deviceHandler.getData();
+    for (const device of autodoors) {
       const uuid = this.hap.uuid.generate(device.deviceId);
       activeUUIDs.add(uuid);
 
@@ -71,12 +70,12 @@ export class OmletCoopDoorPlatform implements DynamicPlatformPlugin {
         existing.context.deviceId = device.deviceId;
         this.homebridgeApi.updatePlatformAccessories([existing]);
         this.logger.info('Restored accessory: %s', device.name);
-        this.handlers.set(uuid, new OmletDoorAccessory(this, existing, deviceHandler));
+        this.handlers.set(uuid, new OmletDoorAccessory(this, existing));
       } else {
         const accessory = new this.homebridgeApi.platformAccessory(device.name, uuid);
         accessory.context.deviceId = device.deviceId;
         this.logger.info('Adding new accessory: %s', device.name);
-        this.handlers.set(uuid, new OmletDoorAccessory(this, accessory, deviceHandler));
+        this.handlers.set(uuid, new OmletDoorAccessory(this, accessory));
         this.homebridgeApi.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
         this.accessories.set(uuid, accessory);
       }

@@ -4,12 +4,8 @@ import type {
   CharacteristicValue,
   Logger,
 } from 'homebridge';
-import type { DeviceHandler } from 'smartcoop-sdk';
 import type { OmletCoopDoorPlatform } from './platform';
-
-type DoorStateValue =
-  | 'open' | 'closed' | 'opening' | 'closing'
-  | 'openpending' | 'closepending' | 'stopping' | 'fault';
+import { OmletApi, type DoorStateValue } from './omletApi';
 
 const TRANSITION_STATES: DoorStateValue[] = [
   'opening', 'openpending', 'closing', 'closepending', 'stopping',
@@ -19,6 +15,7 @@ const FAST_POLL_MS = 10_000;
 
 export class OmletDoorAccessory {
   private readonly service: Service;
+  private readonly api: OmletApi;
   private readonly log: Logger;
 
   private currentDoorState: DoorStateValue = 'open';
@@ -28,10 +25,10 @@ export class OmletDoorAccessory {
   constructor(
     private readonly platform: OmletCoopDoorPlatform,
     private readonly accessory: PlatformAccessory,
-    private readonly device: DeviceHandler,
   ) {
     const { hap, logger, config } = platform;
     this.log = logger;
+    this.api = new OmletApi(config.apiKey);
     this.normalPollMs = (config.pollInterval ?? 60) * 1000;
 
     accessory.getService(hap.Service.AccessoryInformation)!
@@ -85,17 +82,12 @@ export class OmletDoorAccessory {
 
   private async setLockTargetState(value: CharacteristicValue): Promise<void> {
     const { hap } = this.platform;
+    const deviceId: string = this.accessory.context.deviceId;
     const actionName = value === hap.Characteristic.LockTargetState.SECURED ? 'close' : 'open';
-    const action = this.device.getActions().find((a) => a.name === actionName);
-
-    if (!action) {
-      this.log.warn('[%s] action "%s" not available', this.accessory.displayName, actionName);
-      return;
-    }
 
     this.log.info('[%s] → %s door', this.accessory.displayName, actionName);
     try {
-      await this.device.action(action);
+      await this.api.performAction(deviceId, actionName);
       this.reschedulePoll(FAST_POLL_MS);
     } catch (err) {
       this.log.error('[%s] action "%s" failed: %s', this.accessory.displayName, actionName, err);
@@ -114,10 +106,11 @@ export class OmletDoorAccessory {
 
   private async poll(): Promise<void> {
     const { hap } = this.platform;
+    const deviceId: string = this.accessory.context.deviceId;
 
     try {
-      const data = await this.device.refreshData();
-      const newState = (data.state.door?.state ?? 'open') as DoorStateValue;
+      const device = await this.api.getDevice(deviceId);
+      const newState = device.state.door?.state ?? 'open';
 
       if (newState !== this.currentDoorState) {
         this.log.info(

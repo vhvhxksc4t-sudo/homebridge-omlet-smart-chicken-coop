@@ -40,7 +40,7 @@
               "title": "Hide Light",
               "type": "boolean",
               "default": false,
-              "description": "Hide the coop light accessory for this door"
+              "description": "Force-hide the light in HomeKit. By default the light is shown automatically when the Omlet API reports it is fitted to this door."
             }
           }
         }

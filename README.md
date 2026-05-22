@@ -1,6 +1,6 @@
 # homebridge-omlet-smart-chicken-coop
 
-A [Homebridge](https://homebridge.io) plugin for the [Omlet Smart Automatic Chicken Coop Door](https://www.omlet.co.uk/smart-automatic-chicken-coop-door-opener/). Exposes each door on your Omlet account as a **Lock** in Apple HomeKit — so you can see when your flock is secured for the night, open or close the door from the Home app, and receive a notification the moment the state changes.
+A [Homebridge](https://homebridge.io) plugin for the [Omlet Smart Automatic Chicken Coop Door](https://www.omlet.co.uk/smart-automatic-chicken-coop-door-opener/). Exposes each door on your Omlet account as a **Garage Door** in Apple HomeKit — so you can see when your flock is secured for the night, open or close the door from the Home app, and receive a notification the moment the state changes.
 
 Supports **multiple doors** on a single account (one HomeKit accessory per coop).
 
@@ -8,13 +8,14 @@ Supports **multiple doors** on a single account (one HomeKit accessory per coop)
 
 ## Features
 
-- **Lock/Unlock in HomeKit** — closed door = Locked (Secured), open door = Unlocked (Unsecured)
-- **Coop light control** — turn the coop light on or off from the Home app or Siri
+- **Garage door control in HomeKit** — open, closed, opening, and closing states all reflected in the Home app with the correct icon and animation
+- **Coop light auto-detected** — if your door has a light fitted, the plugin detects it automatically from the Omlet API and creates a Lightbulb service; no manual config required
 - **Battery level** — battery percentage and low battery alert visible in HomeKit (when running on batteries)
+- **Obstruction alert** — HomeKit marks the door as obstructed when the Omlet API reports a fault
 - **Notifications** — HomeKit notifies you when the door opens or closes (enable in the Home app)
 - **Manual control** — open or close from the Home app, Siri, or any HomeKit automation
 - **Multiple coops** — all Autodoor devices on your account are discovered automatically
-- **Per-device options** — hide the light accessory for doors that don't have one fitted
+- **Per-device options** — force-hide the light accessory with `hideLight: true` if needed
 - **Responsive polling** — checks every 60 seconds normally; drops to every 10 seconds while the door is in motion
 
 ---
@@ -89,7 +90,7 @@ Each entry in the `devices` array matches a door by name (as it appears in the O
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `name` | string | *required* | Device name — must match the Omlet app exactly |
-| `hideLight` | boolean | `false` | Hide the coop light accessory for this door |
+| `hideLight` | boolean | `false` | Force-hide the light in HomeKit even if the API reports one is fitted |
 
 Example with two doors, one without a light fitted:
 
@@ -100,8 +101,8 @@ Example with two doors, one without a light fitted:
   "apiKey": "your-api-key-here",
   "pollInterval": 60,
   "devices": [
-    { "name": "Chicken Coop",     "hideLight": false },
-    { "name": "Duck House",       "hideLight": true  }
+    { "name": "Chicken Coop",  "hideLight": false },
+    { "name": "Duck House",    "hideLight": true  }
   ]
 }
 ```
@@ -112,20 +113,30 @@ Example with two doors, one without a light fitted:
 
 Each discovered door exposes three HomeKit services:
 
-### Lock Mechanism (door)
+### Garage Door Opener (door)
 
 | Omlet state | HomeKit state |
 |---|---|
-| `open` | Unlocked (Unsecured) |
-| `closed` | Locked (Secured) |
-| `opening` / `openpending` | Unknown (transitioning) |
-| `closing` / `closepending` | Unknown (transitioning) |
-| `stopping` | Unknown |
-| `fault` | Jammed |
+| `open` | Open |
+| `closed` | Closed |
+| `opening` / `openpending` | Opening |
+| `closing` / `closepending` | Closing |
+| `stopping` | Stopped |
+| `fault` | Stopped + Obstruction Detected |
+
+The Home app shows the correct open/close animation and the door icon reflects the current state.
 
 ### Lightbulb (coop light)
 
-On/off control via the Omlet light actions. Can be hidden per-device with `hideLight: true` for doors without a light fitted.
+Added automatically when the Omlet API reports that a light is fitted to the door (detected via the available actions list). On/off control via the Omlet API.
+
+To suppress the light service for a specific door, set `hideLight: true` in the per-device settings.
+
+The Homebridge log shows what was detected at startup:
+```
+[Chicken Coop] light service: enabled (auto-detected)
+[Duck House]   light service: disabled (not detected on device)
+```
 
 ### Battery
 
@@ -141,9 +152,7 @@ HomeKit handles notifications natively — no extra configuration needed in the 
 2. Tap and hold the door accessory → **Accessory Settings** (gear icon)
 3. Enable **Status Change Notifications**
 
-You'll receive an alert on your iPhone/iPad whenever the door locks (closes for the night) or unlocks (opens in the morning).
-
-You can also trigger automations — for example, send a notification if the door is still unlocked after sunset.
+You'll receive an alert on your iPhone/iPad whenever the door opens or closes. You can also trigger automations — for example, send a notification if the door is still open after sunset.
 
 ---
 
@@ -158,6 +167,14 @@ Device names and IDs are logged at every startup:
 [Omlet Smart Chicken Coop]   • Chicken Coop  (id: abc123)
 [Omlet Smart Chicken Coop]   • Duck House    (id: def456)
 ```
+
+---
+
+## Upgrading from v0.3.x
+
+Version 0.4.0 switches the HomeKit service type from **Lock Mechanism** to **Garage Door Opener**. This is a one-time breaking change — any HomeKit automations targeting the old Lock accessory will need to be recreated after upgrading.
+
+After updating, restart Homebridge. The plugin automatically removes the old Lock service from the accessory cache and registers the Garage Door Opener service in its place.
 
 ---
 
@@ -189,7 +206,7 @@ npm install -g ~/homebridge-omlet-smart-chicken-coop-*.tgz
 To publish a pre-release for testing without affecting the `@latest` tag:
 
 ```bash
-npm version prerelease --preid=beta   # e.g. 0.4.0-beta.0
+npm version prerelease --preid=beta   # e.g. 0.4.1-beta.0
 npm publish --tag beta
 ```
 
@@ -200,7 +217,7 @@ npm install -g homebridge-omlet-smart-chicken-coop@beta
 
 Promote to stable when ready:
 ```bash
-npm version 0.4.0
+npm version 0.5.0
 npm publish
 ```
 
@@ -217,8 +234,8 @@ The plugin polls on an interval rather than receiving push events. The default i
 **"No Autodoor devices found" warning**
 This means your API key is valid but the account has no Autodoor devices registered. Check that your door is set up in the Omlet app under the same account.
 
-**Light still showing after setting `hideLight: true`**
-Restart Homebridge once after saving the config change. The service is removed from the accessory cache on the first restart and will not reappear.
+**Light not showing / showing unexpectedly**
+The plugin detects light capability from the Omlet API at startup. Check the Homebridge log — it prints `light service: enabled (auto-detected)` or `light service: disabled (not detected on device)` for each door. If you need to override the auto-detection, set `hideLight: true` in the per-device settings.
 
 **Door shows as offline / unavailable**
 The door has lost its connection to the Omlet cloud. The plugin will keep retrying on the normal poll interval and recover automatically when the door comes back online — no Homebridge restart needed.

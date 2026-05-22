@@ -5,7 +5,7 @@ import type {
   Logger,
 } from 'homebridge';
 import type { OmletCoopDoorPlatform, DeviceOverride } from './platform';
-import { OmletApi, type DoorStateValue, type LightStateValue } from './omletApi';
+import { OmletApi, type OmletDevice, type DoorStateValue, type LightStateValue } from './omletApi';
 
 const TRANSITION_STATES: DoorStateValue[] = [
   'opening', 'openpending', 'closing', 'closepending', 'stopping',
@@ -30,6 +30,7 @@ export class OmletDoorAccessory {
   constructor(
     private readonly platform: OmletCoopDoorPlatform,
     private readonly accessory: PlatformAccessory,
+    device: OmletDevice,
     private readonly override: DeviceOverride = { name: '' },
   ) {
     const { hap, logger, config } = platform;
@@ -37,35 +38,48 @@ export class OmletDoorAccessory {
     this.api = new OmletApi(config.apiKey);
     this.normalPollMs = (config.pollInterval ?? 60) * 1000;
 
+    // Determine light capability from the live API response.
+    // Either the actions list contains on/off, or the state object includes a light sub-object.
+    // hideLight in config force-suppresses the service even when a light is fitted.
+    const deviceHasLight =
+      device.actions.some((a) => a.actionName === 'on' || a.actionName === 'off') ||
+      device.state.light !== undefined;
+    const showLight = deviceHasLight && !override.hideLight;
+
     // ── Accessory Information ────────────────────────────────────────────────
     accessory.getService(hap.Service.AccessoryInformation)!
       .setCharacteristic(hap.Characteristic.Manufacturer, 'Omlet')
       .setCharacteristic(hap.Characteristic.Model, 'Automatic Chicken Coop Door')
       .setCharacteristic(hap.Characteristic.SerialNumber, accessory.context.deviceId);
 
-    // ── Door (LockMechanism) ─────────────────────────────────────────────────
+    // ── Remove stale LockMechanism from earlier plugin versions ──────────────
+    const staleLock = accessory.getService(hap.Service.LockMechanism);
+    if (staleLock) {
+      accessory.removeService(staleLock);
+    }
+
+    // ── Door (GarageDoorOpener) ──────────────────────────────────────────────
     this.doorService =
-      accessory.getService(hap.Service.LockMechanism) ??
-      accessory.addService(hap.Service.LockMechanism, `${accessory.displayName} Door`);
+      accessory.getService(hap.Service.GarageDoorOpener) ??
+      accessory.addService(hap.Service.GarageDoorOpener, accessory.displayName);
+
+    this.doorService.setPrimaryService(true);
 
     this.doorService
-      .getCharacteristic(hap.Characteristic.LockCurrentState)
-      .onGet(() => this.getLockCurrentState());
+      .getCharacteristic(hap.Characteristic.CurrentDoorState)
+      .onGet(() => this.getCurrentDoorState());
 
     this.doorService
-      .getCharacteristic(hap.Characteristic.LockTargetState)
-      .onGet(() => this.getLockTargetState())
-      .onSet((value) => this.setLockTargetState(value));
+      .getCharacteristic(hap.Characteristic.TargetDoorState)
+      .onGet(() => this.getTargetDoorState())
+      .onSet((value) => this.setTargetDoorState(value));
+
+    this.doorService
+      .getCharacteristic(hap.Characteristic.ObstructionDetected)
+      .onGet(() => this.currentDoorState === 'fault');
 
     // ── Light (Lightbulb) ────────────────────────────────────────────────────
-    if (override.hideLight) {
-      // Remove the service if it was previously registered (e.g. config changed)
-      const existing = accessory.getService(hap.Service.Lightbulb);
-      if (existing) {
-        accessory.removeService(existing);
-      }
-      this.lightService = null;
-    } else {
+    if (showLight) {
       this.lightService =
         accessory.getService(hap.Service.Lightbulb) ??
         accessory.addService(hap.Service.Lightbulb, `${accessory.displayName} Light`);
@@ -74,6 +88,20 @@ export class OmletDoorAccessory {
         .getCharacteristic(hap.Characteristic.On)
         .onGet(() => this.currentLightOn)
         .onSet((value) => this.setLightOn(value));
+
+      this.doorService.addLinkedService(this.lightService);
+      this.log.info('[%s] light service: enabled (auto-detected)', accessory.displayName);
+    } else {
+      const existing = accessory.getService(hap.Service.Lightbulb);
+      if (existing) {
+        accessory.removeService(existing);
+      }
+      this.lightService = null;
+      if (override.hideLight) {
+        this.log.info('[%s] light service: hidden (config override)', accessory.displayName);
+      } else {
+        this.log.info('[%s] light service: disabled (not detected on device)', accessory.displayName);
+      }
     }
 
     // ── Battery ──────────────────────────────────────────────────────────────
@@ -87,53 +115,59 @@ export class OmletDoorAccessory {
 
     this.batteryService
       .getCharacteristic(hap.Characteristic.StatusLowBattery)
-      .onGet(() => this.currentBatteryLevel <= LOW_BATTERY_THRESHOLD
-        ? hap.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW
-        : hap.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL,
+      .onGet(() =>
+        this.currentBatteryLevel <= LOW_BATTERY_THRESHOLD
+          ? hap.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW
+          : hap.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL,
       );
 
-    // ChargingState is always NOT_CHARGING — the door runs on either wall power
-    // or batteries, it does not charge an internal battery pack.
+    // ChargingState is always NOT_CHARGING — the door runs on wall power or
+    // replaceable batteries; it does not charge an internal pack.
     this.batteryService.setCharacteristic(
       hap.Characteristic.ChargingState,
       hap.Characteristic.ChargingState.NOT_CHARGING,
     );
+
+    this.doorService.addLinkedService(this.batteryService);
 
     this.schedulePoll(0);
   }
 
   // ── Door helpers ───────────────────────────────────────────────────────────
 
-  private doorStateToLockCurrent(state: DoorStateValue): number {
-    const { hap } = this.platform;
+  private doorStateToCurrentDoorState(state: DoorStateValue): number {
+    const { Characteristic } = this.platform.hap;
     switch (state) {
-      case 'open':   return hap.Characteristic.LockCurrentState.UNSECURED;
-      case 'closed': return hap.Characteristic.LockCurrentState.SECURED;
-      case 'fault':  return hap.Characteristic.LockCurrentState.JAMMED;
-      default:       return hap.Characteristic.LockCurrentState.UNKNOWN;
+      case 'open':         return Characteristic.CurrentDoorState.OPEN;
+      case 'closed':       return Characteristic.CurrentDoorState.CLOSED;
+      case 'opening':
+      case 'openpending':  return Characteristic.CurrentDoorState.OPENING;
+      case 'closing':
+      case 'closepending': return Characteristic.CurrentDoorState.CLOSING;
+      default:             return Characteristic.CurrentDoorState.STOPPED;
     }
   }
 
-  private doorStateToLockTarget(state: DoorStateValue): number {
-    const { hap } = this.platform;
+  private doorStateToTargetDoorState(state: DoorStateValue): number {
+    const { Characteristic } = this.platform.hap;
     if (state === 'closed' || state === 'closing' || state === 'closepending') {
-      return hap.Characteristic.LockTargetState.SECURED;
+      return Characteristic.TargetDoorState.CLOSED;
     }
-    return hap.Characteristic.LockTargetState.UNSECURED;
+    return Characteristic.TargetDoorState.OPEN;
   }
 
-  private getLockCurrentState(): CharacteristicValue {
-    return this.doorStateToLockCurrent(this.currentDoorState);
+  private getCurrentDoorState(): CharacteristicValue {
+    return this.doorStateToCurrentDoorState(this.currentDoorState);
   }
 
-  private getLockTargetState(): CharacteristicValue {
-    return this.doorStateToLockTarget(this.currentDoorState);
+  private getTargetDoorState(): CharacteristicValue {
+    return this.doorStateToTargetDoorState(this.currentDoorState);
   }
 
-  private async setLockTargetState(value: CharacteristicValue): Promise<void> {
-    const { hap } = this.platform;
+  private async setTargetDoorState(value: CharacteristicValue): Promise<void> {
+    const { Characteristic } = this.platform.hap;
     const deviceId: string = this.accessory.context.deviceId;
-    const actionName = value === hap.Characteristic.LockTargetState.SECURED ? 'close' : 'open';
+    const actionName = value === Characteristic.TargetDoorState.CLOSED ? 'close' : 'open';
 
     this.log.info('[%s] → %s door', this.accessory.displayName, actionName);
     try {
@@ -186,12 +220,16 @@ export class OmletDoorAccessory {
         this.log.info('[%s] door: %s → %s', this.accessory.displayName, this.currentDoorState, newDoorState);
         this.currentDoorState = newDoorState;
         this.doorService.updateCharacteristic(
-          hap.Characteristic.LockCurrentState,
-          this.doorStateToLockCurrent(newDoorState),
+          hap.Characteristic.CurrentDoorState,
+          this.doorStateToCurrentDoorState(newDoorState),
         );
         this.doorService.updateCharacteristic(
-          hap.Characteristic.LockTargetState,
-          this.doorStateToLockTarget(newDoorState),
+          hap.Characteristic.TargetDoorState,
+          this.doorStateToTargetDoorState(newDoorState),
+        );
+        this.doorService.updateCharacteristic(
+          hap.Characteristic.ObstructionDetected,
+          newDoorState === 'fault',
         );
       }
 

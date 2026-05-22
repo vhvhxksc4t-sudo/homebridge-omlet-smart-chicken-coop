@@ -22,7 +22,7 @@ Supports **multiple doors** on a single account (one HomeKit accessory per coop)
 ## Requirements
 
 - [Homebridge](https://homebridge.io) v1.8.0 or later (v2.x supported)
-- Node.js 18 or later
+- Node.js 22 or later
 - An Omlet account with at least one Smart Automatic Chicken Coop Door
 - A free Omlet API key (see below)
 

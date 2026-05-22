@@ -1,0 +1,50 @@
+{
+  "name": "homebridge-omlet-smart-chicken-coop",
+  "version": "0.1.0",
+  "description": "Homebridge plugin for Omlet Smart Automatic Chicken Coop — supports multiple doors",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist",
+    "config.schema.json"
+  ],
+  "keywords": [
+    "homebridge-plugin",
+    "omlet",
+    "chicken",
+    "coop",
+    "door",
+    "smartcoop",
+    "autodoor",
+    "homekit"
+  ],
+  "author": "vhvhxksc4t",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vhvhxksc4t/homebridge-omlet-smart-chicken-coop.git"
+  },
+  "bugs": {
+    "url": "https://github.com/vhvhxksc4t/homebridge-omlet-smart-chicken-coop/issues"
+  },
+  "homepage": "https://github.com/vhvhxksc4t/homebridge-omlet-smart-chicken-coop#readme",
+  "engines": {
+    "node": ">=18.0.0",
+    "homebridge": ">=1.8.0"
+  },
+  "peerDependencies": {
+    "homebridge": "^1.8.0 || ^2.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "homebridge": "^2.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "smartcoop-sdk": "^1.1.1"
+  }
+}

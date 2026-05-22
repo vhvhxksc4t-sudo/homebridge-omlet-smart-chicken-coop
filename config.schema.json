@@ -1,0 +1,37 @@
+{
+  "pluginAlias": "OmletSmartChickenCoop",
+  "pluginType": "platform",
+  "singular": true,
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string",
+        "default": "Omlet Smart Chicken Coop",
+        "required": true
+      },
+      "apiKey": {
+        "title": "API Key",
+        "type": "string",
+        "required": true,
+        "description": "Generate at https://smart.omlet.com/developers/my/api-keys"
+      },
+      "pollInterval": {
+        "title": "Poll Interval (seconds)",
+        "type": "integer",
+        "default": 60,
+        "minimum": 10,
+        "description": "How often to check door state. Automatically drops to 10s during open/close transitions."
+      }
+    }
+  },
+  "layout": [
+    "name",
+    "apiKey",
+    {
+      "key": "pollInterval",
+      "description": "How often to check door state (seconds). Drops to 10s automatically during transitions."
+    }
+  ]
+}

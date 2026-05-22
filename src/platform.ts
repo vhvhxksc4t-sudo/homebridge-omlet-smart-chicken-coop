@@ -88,9 +88,11 @@ export class OmletCoopDoorPlatform implements DynamicPlatformPlugin {
       const existing = this.accessories.get(uuid);
       if (existing) {
         existing.context.deviceId = device.deviceId;
-        this.homebridgeApi.updatePlatformAccessories([existing]);
+        // Create the accessory handler first — it removes/adds services based on
+        // the current config — then persist so the cache reflects those changes.
         this.logger.info('Restored: %s%s', device.name, override.hideLight ? ' (light hidden)' : '');
         this.handlers.set(uuid, new OmletDoorAccessory(this, existing, override));
+        this.homebridgeApi.updatePlatformAccessories([existing]);
       } else {
         const accessory = new this.homebridgeApi.platformAccessory(device.name, uuid);
         accessory.context.deviceId = device.deviceId;
